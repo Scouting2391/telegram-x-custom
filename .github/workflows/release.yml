@@ -76,8 +76,13 @@ jobs:
           python scripts/release_pipeline.py prepare
           --release-id "$UPSTREAM_ID"
           --output-dir .ci
-      - name: Install fixed Android SDK components
-        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+      - name: Verify fixed Android SDK components provided by the runner
+        run: |
+          test -f "$ANDROID_HOME/platforms/android-35/android.jar"
+          test -x "$ANDROID_HOME/build-tools/35.0.0/zipalign"
+          test -x "$ANDROID_HOME/build-tools/35.0.0/aapt2"
+          test -f "$ANDROID_HOME/build-tools/35.0.0/lib/apksigner.jar"
+          test -f "$ANDROID_HOME/build-tools/35.0.0/lib/d8.jar"
       - name: Verify updater trust decisions and push diagnostics
         run: >-
           python tests/run_updater_tests.py
