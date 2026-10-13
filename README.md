@@ -12,9 +12,11 @@ At the first launch, the **GitHub updates** dialog asks for a public repository 
 
 Automatic checks run at most once every six hours while the app is open. A newer release produces an update prompt. Downloading happens inside the app; Android requires permission to install apps from Telegram X and asks you to confirm installation. Checks do not run as a permanent background service.
 
-**Local preparation does not activate a GitHub feed.** Until this project is uploaded to a public repository and its first custom release is published, leave the repository blank and install future local APKs manually.
+**Live update feed:** [Scouting2391/telegram-x-custom](https://github.com/Scouting2391/telegram-x-custom/releases/latest). Enter `Scouting2391/telegram-x-custom` in the app's **GitHub updates** dialog, save it, and use **Check now**. The first custom release has been published by the verified workflow. If this release is already installed, the app correctly reports that no newer update is available.
 
-## Enable the GitHub release feed
+## Reproduce the GitHub release setup
+
+The current repository and its private signing environment are already configured. These steps document the setup for maintenance or reproducing it in another repository.
 
 1. Create a public repository under your GitHub account. Upload the contents of this project, including `.github/workflows/release.yml`, on its default branch. Do not upload the local signing backup or signing files.
 2. In repository **Settings → Environments**, create an environment named `signing`. Restrict deployments to your default branch. Add its secrets:
@@ -30,7 +32,7 @@ The workflow checks official stable releases every six hours. It downloads the o
 
 Revision `1` is the normal scheduled build. For a correction to the same upstream version, run the workflow manually with revision `2` through `99`. An older or already published revision is skipped. Upstream version code plus this revision yields the custom version code, which is currently `1817301` for 0.29.1.1817 revision 1.
 
-GitHub schedules can be delayed and are subject to GitHub's scheduled-workflow inactivity rules. This is a prepared workflow; no hosted run has been performed during local setup.
+GitHub schedules can be delayed and are subject to GitHub's scheduled-workflow inactivity rules. The initial [hosted build and publication](https://github.com/Scouting2391/telegram-x-custom/actions/runs/38482088328) completed successfully on October 13, 2026. Its published APK and metadata were independently downloaded and verified against the existing personal signer.
 
 ## What the app accepts
 
@@ -57,7 +59,7 @@ The supplied log does not prove a signing restriction or identify an HTTP respon
 
 ## Build and verification
 
-Requirements: Python 3.10 or later, JDK 21, Android SDK platform 35 or later, build-tools 35 or later, and the pinned Apktool 3.0.3 JAR. CI installs the required versions. Helpers use Android framework APIs and target minimum API 24.
+Requirements: Python 3.11 or later, JDK 21, Android SDK platform 35 or later, build-tools 35 or later, and the pinned Apktool 3.0.3 JAR. CI validates the fixed Android SDK components provided by the hosted runner. Helpers use Android framework APIs and target minimum API 24.
 
 ```sh
 python -m unittest discover -s tests -v
@@ -71,6 +73,6 @@ python scripts/build_custom.py \
   --revision 1
 ```
 
-Use a fresh build work directory. This is a patch of the official compiled APK plus new Java helper code, rather than a complete recompilation of Telegram X's native dependencies. Source for the helper, patching procedure, upstream release metadata, and the resulting bytecode diff are supplied. The upstream full application source remains available at its release tag. GPL-3.0 licensing applies; see `LICENSE` and the upstream project for additional component notices.
+Use a fresh build work directory. This is a patch of the official compiled APK plus new Java helper code, rather than a complete recompilation of Telegram X's native dependencies. This repository supplies the helper source and patching procedure. The build produces `dist/bytecode-changes.patch`; the release assets include upstream metadata and the verification report. The upstream full application source remains available at its release tag. GPL-3.0 licensing applies; see `LICENSE` and the upstream project for additional component notices.
 
-Local validation passed 46 updater trust checks, 23 diagnostic checks, and seven release-policy tests. The final APK audit checks all original classes, limits changed methods to the intended hooks, verifies resources and native libraries stayed byte-identical, and verifies Android v2/v3 signatures and alignment. Phone installation, UI behavior, an actual future update, Firebase registration, and a hosted Actions run have not been tested.
+Local and hosted validation passed 46 updater trust checks, 23 diagnostic checks, and seven release-policy tests. The final APK audit checks all original classes, limits changed methods to the intended hooks, verifies resources and native libraries stayed byte-identical, and verifies Android v2/v3 signatures and alignment. Hosted building, signing, publication, and verification of the downloaded release passed. Phone installation, UI behavior, an actual future update on a device, and Firebase registration remain untested.
