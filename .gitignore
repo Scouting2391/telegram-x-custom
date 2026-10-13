@@ -1,0 +1,18 @@
+# Never commit private signing material or generated application binaries.
+.ci/
+dist/
+build-work/
+.test-work/
+__pycache__/
+*.pyc
+*.jks
+*.keystore
+*.p12
+*.pfx
+*.pem
+*.key
+*.apk
+*.aab
+*.idsig
+*password*
+*secret*

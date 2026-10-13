@@ -1,2 +1,76 @@
-# telegram-x-custom
-Personal Telegram X build with GitHub-only in-app updates and Google Play update prompts disabled.
+# Personal Telegram X with GitHub updates
+
+This project creates a custom-signed Telegram X APK from the official stable universal APK on [TGX-Android/Telegram-X](https://github.com/TGX-Android/Telegram-X/releases). It disables Telegram X's Google Play in-app update checks and its official Telegram-channel APK updater, and adds a GitHub Releases updater for this personal build.
+
+The local bootstrap release is based on **0.29.1.1817**, Android 7.0 or later. Google Play Services, Firebase messaging, and the existing Telegram functions remain in the application. This modification disables update requests made by Telegram X; it cannot control notifications issued separately by the Google Play Store app.
+
+## Install and use
+
+Install `Telegram-X-0.29.1.1817-github-r1.apk` over the previously provided custom 0.29.0.1813 APK. It uses the same package and personal signing key, with a higher Android version code. Keep the existing application installed. An official Telegram X installation with a different signing key cannot accept this APK as an update.
+
+At the first launch, the **GitHub updates** dialog asks for a public repository such as `your-account/telegram-x-custom`. It must host your custom releases, not the official upstream repository. The existing **Check for updates** and **Update automatically** actions also open this dialog. Save the repository, leave automatic checks enabled, or use **Check now**.
+
+Automatic checks run at most once every six hours while the app is open. A newer release produces an update prompt. Downloading happens inside the app; Android requires permission to install apps from Telegram X and asks you to confirm installation. Checks do not run as a permanent background service.
+
+**Local preparation does not activate a GitHub feed.** Until this project is uploaded to a public repository and its first custom release is published, leave the repository blank and install future local APKs manually.
+
+## Enable the GitHub release feed
+
+1. Create a public repository under your GitHub account. Upload the contents of this project, including `.github/workflows/release.yml`, on its default branch. Do not upload the local signing backup or signing files.
+2. In repository **Settings → Environments**, create an environment named `signing`. Restrict deployments to your default branch. Add its secrets:
+   - `TGX_KEYSTORE_BASE64`: base64 encoding of the existing `telegram-x-custom.p12` file.
+   - `TGX_KEYSTORE_PASSWORD`: the existing key password, without a trailing newline.
+3. In repository **Settings → Actions → General**, allow the included actions and grant the release workflow the necessary repository write permission. The publisher job requests `contents: write`; the build job only requests read access.
+4. Run **Actions → Build custom Telegram X update → Run workflow** on the default branch, using revision `1`. Inspect the resulting release and verification report.
+5. Enter this repository's `owner/name` in the app's **GitHub updates** dialog and save it. Use **Check now** to confirm that the feed is accessible.
+
+Keep the existing signing key: generating another key prevents updates to the installed custom APK. The private local backup is supplied separately and is not included in this repository package.
+
+The workflow checks official stable releases every six hours. It downloads the official universal APK, validates its GitHub SHA-256 digest and official signing certificate, applies the reviewed bytecode hooks, compiles the updater sources, signs with your personal key, and audits the result. A separate job uploads a draft release, verifies GitHub asset digests, then publishes it. Future upstream bytecode changes that no longer match the reviewed hooks stop the build for inspection.
+
+Revision `1` is the normal scheduled build. For a correction to the same upstream version, run the workflow manually with revision `2` through `99`. An older or already published revision is skipped. Upstream version code plus this revision yields the custom version code, which is currently `1817301` for 0.29.1.1817 revision 1.
+
+GitHub schedules can be delayed and are subject to GitHub's scheduled-workflow inactivity rules. This is a prepared workflow; no hosted run has been performed during local setup.
+
+## What the app accepts
+
+The latest stable GitHub release must have exactly one APK and a `tgx-update.json` asset. The workflow supplies both. The app checks HTTPS GitHub download hosts, asset sizes and SHA-256 digests, the APK's package, newer Android version code, version name, compatible minimum Android version, and the signing certificate against the installed app. Drafts, prereleases, official APKs signed by another key, and damaged downloads are rejected. No GitHub token or signing private key is included in the app.
+
+Example metadata:
+
+```json
+{
+  "schemaVersion": 1,
+  "packageName": "org.thunderdog.challegram",
+  "versionCode": 1817301,
+  "versionName": "0.29.1.1817-universal",
+  "apkFileName": "Telegram-X-0.29.1.1817-github-r1.apk",
+  "minSdkVersion": 24
+}
+```
+
+## Notification error
+
+The reported failure ends in **Firebase Installations Service is unavailable. Please try again later.** The earlier `FCM Registration failed!` text is a wrapper. This build exposes the deeper cause in notification settings while preserving the complete shareable error report. It does not suppress failures or replace Firebase credentials.
+
+The supplied log does not prove a signing restriction or identify an HTTP response. Notifications arriving now do not confirm successful Firebase registration: Telegram X can also receive messages while its Telegram connection is active. Use the existing retry action if the error persists. Reliable push delivery with the application idle must be checked on the phone.
+
+## Build and verification
+
+Requirements: Python 3.10 or later, JDK 21, Android SDK platform 35 or later, build-tools 35 or later, and the pinned Apktool 3.0.3 JAR. CI installs the required versions. Helpers use Android framework APIs and target minimum API 24.
+
+```sh
+python -m unittest discover -s tests -v
+python tests/run_updater_tests.py --java-home "$JAVA_HOME" --android-jar "$ANDROID_HOME/platforms/android-35/android.jar"
+python scripts/build_custom.py \
+  --input-apk original.apk --release-json upstream-release.json \
+  --output-dir dist --work-dir build-work \
+  --java-home "$JAVA_HOME" --android-jar "$ANDROID_HOME/platforms/android-35/android.jar" \
+  --build-tools "$ANDROID_HOME/build-tools/35.0.0" --apktool apktool.jar \
+  --keystore /private/telegram-x-custom.p12 --keystore-password-file /private/password.txt \
+  --revision 1
+```
+
+Use a fresh build work directory. This is a patch of the official compiled APK plus new Java helper code, rather than a complete recompilation of Telegram X's native dependencies. Source for the helper, patching procedure, upstream release metadata, and the resulting bytecode diff are supplied. The upstream full application source remains available at its release tag. GPL-3.0 licensing applies; see `LICENSE` and the upstream project for additional component notices.
+
+Local validation passed 46 updater trust checks, 23 diagnostic checks, and seven release-policy tests. The final APK audit checks all original classes, limits changed methods to the intended hooks, verifies resources and native libraries stayed byte-identical, and verifies Android v2/v3 signatures and alignment. Phone installation, UI behavior, an actual future update, Firebase registration, and a hosted Actions run have not been tested.
