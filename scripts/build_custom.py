@@ -195,6 +195,63 @@ def patch_hooks(files, resources):
         replacement = f'    invoke-static {{p1}}, {DIAGNOSTICS}->describe(Ljava/lang/Throwable;)Ljava/lang/String;\n    move-result-object v0\n\n'
         diag_body = diag_body[:block.start()] + replacement + diag_body[block.end():]
     save(diag_path, replace_method(diag_text, diag_sig, diag_body), [diag_sig])
+
+    # Preserve the initial server response that the SDK otherwise exposes only in logcat.
+    # The helper receives an existing SDK log string and retains only status/allowlisted reasons.
+    marker = 'Error when communicating with the Firebase Installations server API. HTTP response: [%d %s: %s]'
+    clients = [(p, t) for p, t in files.items() if marker in t]
+    require(len(clients) == 1, 'Unknown Firebase installation HTTP logger')
+    client_path, client_text = clients[0]
+    client_name = class_name(client_text)
+    log_methods = [(s, t) for s, t in methods(client_text).items() if marker in t]
+    require(len(log_methods) == 1, 'Unknown Firebase HTTP log method')
+    log_sig, log_body = log_methods[0]
+    require(log_sig.endswith('(Ljava/net/HttpURLConnection;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V'),
+            'Unreviewed Firebase logger parameters')
+    formatted = list(re.finditer(r'    invoke-static \{[^}]+\}, Ljava/lang/String;->format\(Ljava/lang/String;\[Ljava/lang/Object;\)Ljava/lang/String;\n(?:\s*\.line \d+\n|\s*\n)*    move-result-object (v\d+)', log_body))
+    require(len(formatted) == 1, 'Unknown Firebase HTTP response formatting')
+    item = formatted[0]
+    log_body = log_body[:item.end()] + f'\n    invoke-static {{{item[1]}}}, {DIAGNOSTICS}->recordFirebaseResponse(Ljava/lang/String;)V\n' + log_body[item.end():]
+    save(client_path, replace_method(client_text, log_sig, log_body), [log_sig])
+
+    # The SDK discards IO exceptions while retrying. Capture their category in separate
+    # catch-only trampolines so normal 5xx retry jumps and all retry limits are unchanged.
+    log_call = client_name + '->' + re.search(r'(\w+)\(', log_sig)[1] + '(Ljava/net/HttpURLConnection;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V'
+    callers = [(p, t) for p, t in files.items() if log_call in t and
+               'Firebase Installations Service is unavailable. Please try again later.' in t]
+    require(len(callers) == 1, 'Unknown Firebase network executor')
+    net_path, net_text = callers[0]
+    net_methods = [(s, t) for s, t in methods(net_text).items() if log_call in t and
+                   'Ljava/net/HttpURLConnection;->getResponseCode()I' in t]
+    require(len(net_methods) == 2, 'Expected reviewed Firebase create/token methods')
+    patched_net = net_text
+    for index, (signature, body) in enumerate(net_methods):
+        local = re.search(r'^    \.locals (\d+)\s*$', body, re.M)
+        require(local and int(local[1]) < 240, 'Unknown Firebase local register layout')
+        count = int(local[1])
+        require(all(int(v) < count for v in re.findall(r'\bv(\d+)\b', body)), 'Firebase parameters use explicit local aliases')
+        handlers = sorted(set(re.findall(r'^    \.catch Ljava/io/IOException; [^\n]+ (:[\w_]+)$', body, re.M)))
+        require(1 <= len(handlers) <= 2, 'Unknown Firebase IOException handlers')
+        require(not any('move-exception' in body[body.index('    ' + label + '\n') + len(label) + 5:].split('\n', 4)[0] for label in handlers),
+                'Firebase already preserves IOException details')
+        tail = body[:body.rfind('.end method')].strip()
+        require(re.search(r'(?:throw|return-object) [vp]\d+$', tail), 'Firebase method may fall through into added handlers')
+        body = body[:local.start(1)] + str(count + 1) + body[local.end(1):]
+        additions = []
+        for handler_index, label in enumerate(handlers):
+            diagnostic_label = f':firebase_io_diagnostic_{index}_{handler_index}'
+            require(diagnostic_label not in body, 'Diagnostic handler already present')
+            body, replaced = re.subn(r'(^    \.catch Ljava/io/IOException; [^\n]+ )' + re.escape(label) + r'$',
+                                     lambda m: m[1] + diagnostic_label, body, flags=re.M)
+            require(replaced >= 1, 'Missing Firebase IOException catch')
+            additions.append(f'''    {diagnostic_label}
+    move-exception v{count}
+    invoke-static/range {{v{count} .. v{count}}}, {DIAGNOSTICS}->recordFirebaseTransportFailure(Ljava/lang/Throwable;)V
+    goto/16 {label}
+''')
+        body = body[:body.rfind('.end method')] + '\n' + '\n'.join(additions) + '.end method'
+        patched_net = replace_method(patched_net, signature, body)
+    save(net_path, patched_net, [s for s, _ in net_methods])
     return changes, expected
 
 
@@ -404,6 +461,7 @@ def main():
               'originalClassesAudited': len(original), 'addedClasses': added_classes,
               'googlePlayUpdaterDisabled': True, 'officialChannelUpdaterDisabled': True,
               'githubUpdaterConfigurableInApp': True, 'firebaseCauseDiagnosticsEnabled': True,
+              'firebaseHttpAndTransportDiagnosticsEnabled': True,
               'signatureVerification': 'Android v2/v3 passed', 'alignment': '4-byte and 16 KiB native alignment passed',
               'runtimeDeviceTest': 'not performed', 'buildMethod': 'reviewed APK patch plus compiled Android helper'}
     (out / 'tgx-update.json').write_text(json.dumps(metadata, indent=2) + '\n', encoding='utf-8')

@@ -12,6 +12,9 @@ public final class PushDiagnosticsTest {
     errorCodeExtraction();
     cyclicCauses();
     depthLimit();
+    firebaseResponsePrivacy();
+    firebaseTransportCategories();
+    diagnosticExpiry();
     System.out.println("PushDiagnostics: " + checks + " checks passed.");
   }
 
@@ -81,6 +84,90 @@ public final class PushDiagnosticsTest {
     equal("never inspect beyond bound", 0, chain[17].causeReads);
     equal("bounded cause reads", 0, chain[16].causeReads);
     same("deep link preserved", chain[17], chain[16].next);
+  }
+
+  private static final String UNAVAILABLE = "Firebase Installations Service is unavailable. Please try again later.";
+  private static String unavailable() { return PushDiagnostics.describe(new IOException(UNAVAILABLE)); }
+
+  private static void firebaseResponsePrivacy() {
+    resetDiagnostics();
+    PushDiagnostics.recordFirebaseResponse("Error when communicating with the Firebase Installations server API. HTTP response: [403 Forbidden: " +
+      "{\"error\":{\"status\":\"PERMISSION_DENIED\",\"message\":\"key PRIVATE_API_KEY for fid PRIVATE_FID\",\"details\":[" +
+      "{\"reason\":\"API_KEY_ANDROID_APP_BLOCKED\",\"metadata\":{\"apiKey\":\"PRIVATE_API_KEY\",\"fingerprint\":\"PRIVATE_FINGERPRINT\"}}]}}]");
+    equal("surface safe restriction reason", UNAVAILABLE + " [Last Firebase failure: HTTP 403; PERMISSION_DENIED; API_KEY_ANDROID_APP_BLOCKED]", unavailable());
+    equal("unrelated failures unchanged", "Other failure", PushDiagnostics.describe(new IOException("Other failure")));
+    equal("bad config also gets context", "BAD CONFIG [Last Firebase failure: HTTP 403; PERMISSION_DENIED; API_KEY_ANDROID_APP_BLOCKED]",
+      PushDiagnostics.describe(new IOException("BAD CONFIG")));
+    IOException wrapper = new IOException("FCM Registration failed!", new IOException(UNAVAILABLE));
+    String outer = wrapper.getMessage();
+    Throwable cause = wrapper.getCause();
+    equal("wrapped unavailable gets context", unavailable(), PushDiagnostics.describe(wrapper));
+    same("original cause still unchanged", cause, wrapper.getCause());
+    equal("original message still unchanged", outer, wrapper.getMessage());
+    resetDiagnostics();
+    PushDiagnostics.recordFirebaseResponse("HTTP response: [403 Forbidden: {\"reason\":\"SECRET_IDENTIFIER\",\"status\":\"PRIVATE_TOKEN\"}]");
+    equal("unknown server values redacted", UNAVAILABLE + " [Last Firebase failure: HTTP 403]", unavailable());
+    resetDiagnostics();
+    PushDiagnostics.recordFirebaseResponse("HTTP response: [503 Unavailable: {\"status\":\"UNAVAILABLE\",\"reason\":\"UNAVAILABLE\"}]");
+    equal("duplicate reason deduplicated", UNAVAILABLE + " [Last Firebase failure: HTTP 503; UNAVAILABLE]", unavailable());
+    resetDiagnostics();
+    PushDiagnostics.recordFirebaseResponse(null);
+    PushDiagnostics.recordFirebaseResponse("HTTP response: [200 OK: {\"reason\":\"API_KEY_INVALID\"}]");
+    PushDiagnostics.recordFirebaseResponse("HTTP response: [999 Unknown: private]");
+    PushDiagnostics.recordFirebaseResponse("malformed without HTTP status");
+    equal("invalid or successful response ignored", UNAVAILABLE, unavailable());
+    StringBuilder large = new StringBuilder("HTTP response: [403 Forbidden: ");
+    while (large.length() < 66000) large.append('x');
+    large.append("{\"reason\":\"API_KEY_ANDROID_APP_BLOCKED\"}]");
+    PushDiagnostics.recordFirebaseResponse(large.toString());
+    equal("bounded body parsing", UNAVAILABLE + " [Last Firebase failure: HTTP 403]", unavailable());
+    resetDiagnostics();
+  }
+
+  private static void firebaseTransportCategories() {
+    PushDiagnostics.recordFirebaseTransportFailure(new java.net.UnknownHostException("PRIVATE_HOST PRIVATE_TOKEN"));
+    equal("DNS category only", UNAVAILABLE + " [Last Firebase failure: DNS lookup failed (UnknownHostException)]", unavailable());
+    PushDiagnostics.recordFirebaseTransportFailure(new IOException("private", new java.net.SocketTimeoutException("private")));
+    equal("nested timeout category", UNAVAILABLE + " [Last Firebase failure: connection timed out (SocketTimeoutException)]", unavailable());
+    PushDiagnostics.recordFirebaseTransportFailure(new java.net.ConnectException("private"));
+    equal("connect category", UNAVAILABLE + " [Last Firebase failure: connection failed (ConnectException)]", unavailable());
+    PushDiagnostics.recordFirebaseTransportFailure(new javax.net.ssl.SSLHandshakeException("PRIVATE_CERTIFICATE"));
+    equal("TLS handshake category", UNAVAILABLE + " [Last Firebase failure: TLS handshake failed (SSLHandshakeException)]", unavailable());
+    PushDiagnostics.recordFirebaseTransportFailure(new javax.net.ssl.SSLException("private"));
+    equal("TLS category", UNAVAILABLE + " [Last Firebase failure: TLS connection failed (SSLException)]", unavailable());
+    PushDiagnostics.recordFirebaseTransportFailure(new IOException("https://private.test/FID?token=PRIVATE"));
+    equal("generic IO message redacted", UNAVAILABLE + " [Last Firebase failure: network error (IOException)]", unavailable());
+    LinkedFailure cycle = new LinkedFailure("private"); cycle.next = cycle;
+    PushDiagnostics.recordFirebaseTransportFailure(cycle);
+    equal("transport cycles terminate", UNAVAILABLE + " [Last Firebase failure: network error (IOException)]", unavailable());
+    PushDiagnostics.recordFirebaseTransportFailure(null);
+    equal("null transport ignored", UNAVAILABLE + " [Last Firebase failure: network error (IOException)]", unavailable());
+    PushDiagnostics.recordFirebaseResponse("HTTP response: [429 Too many requests: {\"status\":\"RESOURCE_EXHAUSTED\"}]");
+    equal("latest response replaces transport", UNAVAILABLE + " [Last Firebase failure: HTTP 429; RESOURCE_EXHAUSTED]", unavailable());
+    resetDiagnostics();
+  }
+
+  @SuppressWarnings("unchecked")
+  private static java.util.concurrent.atomic.AtomicReference<Object> diagnosticSlot() {
+    try {
+      java.lang.reflect.Field field = PushDiagnostics.class.getDeclaredField("LAST_FIREBASE_FAILURE");
+      field.setAccessible(true);
+      return (java.util.concurrent.atomic.AtomicReference<Object>) field.get(null);
+    } catch (Exception error) { throw new AssertionError(error); }
+  }
+  private static void resetDiagnostics() { diagnosticSlot().set(null); }
+  private static void diagnosticExpiry() {
+    try {
+      Class<?> record = Class.forName(PushDiagnostics.class.getName() + "$Failure");
+      java.lang.reflect.Constructor<?> ctor = record.getDeclaredConstructor(String.class, long.class);
+      ctor.setAccessible(true);
+      diagnosticSlot().set(ctor.newInstance("HTTP 403", System.nanoTime() - 16L * 60L * 1000000000L));
+      equal("stale diagnostic discarded", UNAVAILABLE, unavailable());
+      equal("expired entry removed", true, diagnosticSlot().get() == null);
+      diagnosticSlot().set(ctor.newInstance("HTTP 403", System.nanoTime() + 60000000000L));
+      equal("future clock value discarded", UNAVAILABLE, unavailable());
+      resetDiagnostics();
+    } catch (Exception error) { throw new AssertionError(error); }
   }
 
   private static void equal(String label, Object expected, Object actual) {
