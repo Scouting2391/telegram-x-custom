@@ -237,6 +237,14 @@ def patch_hooks(files, resources):
         tail = body[:body.rfind('.end method')].strip()
         require(re.search(r'(?:throw|return-object) [vp]\d+$', tail), 'Firebase method may fall through into added handlers')
         body = body[:local.start(1)] + str(count + 1) + body[local.end(1):]
+        # The SDK's error logger skips unreadable or absent bodies. Observe the
+        # response code already returned to the SDK before that optional logger.
+        responses = list(re.finditer(r'    invoke-virtual \{v\d+\}, Ljava/net/HttpURLConnection;->getResponseCode\(\)I\n(?:\s*\.line \d+\n|\s*\n)*    move-result (v\d+)', body))
+        require(len(responses) == 1, 'Expected one Firebase HTTP status result per network method')
+        response = responses[0]
+        require(re.match(r'(?:\s*\.line \d+\n|\s*\n)*    invoke-virtual \{v\d+, ' + re.escape(response[1]) + r'\}, L\w+;->\w+\(I\)V', body[response.end():]),
+                'Unknown Firebase retry-limiter status update')
+        body = body[:response.end()] + f'\n    invoke-static/range {{{response[1]} .. {response[1]}}}, {DIAGNOSTICS}->recordFirebaseHttpStatus(I)V\n' + body[response.end():]
         additions = []
         for handler_index, label in enumerate(handlers):
             diagnostic_label = f':firebase_io_diagnostic_{index}_{handler_index}'
@@ -462,6 +470,7 @@ def main():
               'googlePlayUpdaterDisabled': True, 'officialChannelUpdaterDisabled': True,
               'githubUpdaterConfigurableInApp': True, 'firebaseCauseDiagnosticsEnabled': True,
               'firebaseHttpAndTransportDiagnosticsEnabled': True,
+              'firebaseBodyIndependentHttpDiagnosticsEnabled': True,
               'signatureVerification': 'Android v2/v3 passed', 'alignment': '4-byte and 16 KiB native alignment passed',
               'runtimeDeviceTest': 'not performed', 'buildMethod': 'reviewed APK patch plus compiled Android helper'}
     (out / 'tgx-update.json').write_text(json.dumps(metadata, indent=2) + '\n', encoding='utf-8')

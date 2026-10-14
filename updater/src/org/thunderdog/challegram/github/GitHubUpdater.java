@@ -140,7 +140,10 @@ public final class GitHubUpdater {
     automatic.setChecked(prefs.getBoolean("automatic", true));
     layout.addView(automatic);
     TextView note = new TextView(activity);
-    note.setText("Updates come only from this GitHub channel. Android will ask you to confirm installation.");
+    String installedBuild = "";
+    try { installedBuild = "\nInstalled build: " + versionCode(installed(activity)); }
+    catch (PackageManager.NameNotFoundException ignored) { }
+    note.setText("Updates come only from this GitHub channel. Android will ask you to confirm installation." + installedBuild);
     layout.addView(note);
     final WeakReference<Activity> ref = new WeakReference<>(activity);
     final AlertDialog dialog = new AlertDialog.Builder(activity)

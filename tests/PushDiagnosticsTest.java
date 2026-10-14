@@ -12,6 +12,7 @@ public final class PushDiagnosticsTest {
     errorCodeExtraction();
     cyclicCauses();
     depthLimit();
+    firebaseStatusWithoutBody();
     firebaseResponsePrivacy();
     firebaseTransportCategories();
     diagnosticExpiry();
@@ -87,7 +88,35 @@ public final class PushDiagnosticsTest {
   }
 
   private static final String UNAVAILABLE = "Firebase Installations Service is unavailable. Please try again later.";
+  private static final String NO_CAPTURE = UNAVAILABLE + " [Firebase diagnostics v3: no recent HTTP/transport failure captured]";
   private static String unavailable() { return PushDiagnostics.describe(new IOException(UNAVAILABLE)); }
+
+  private static void firebaseStatusWithoutBody() {
+    resetDiagnostics();
+    equal("diagnostic presence without a captured failure", NO_CAPTURE, unavailable());
+    PushDiagnostics.recordFirebaseHttpStatus(403);
+    equal("body-less HTTP response captured", UNAVAILABLE + " [Last Firebase failure: HTTP 403]", unavailable());
+    PushDiagnostics.recordFirebaseResponse("HTTP response: [403 Forbidden: {\"reason\":\"API_KEY_ANDROID_APP_BLOCKED\"}]");
+    equal("optional safe body adds detail", UNAVAILABLE + " [Last Firebase failure: HTTP 403; API_KEY_ANDROID_APP_BLOCKED]", unavailable());
+    PushDiagnostics.recordFirebaseHttpStatus(503);
+    equal("next status replaces old body detail", UNAVAILABLE + " [Last Firebase failure: HTTP 503]", unavailable());
+    PushDiagnostics.recordFirebaseHttpStatus(200);
+    equal("successful response clears prior failure", NO_CAPTURE, unavailable());
+    for (int status : new int[] {300, 401, 404, 429, 599}) {
+      PushDiagnostics.recordFirebaseHttpStatus(status);
+      equal("HTTP status boundary " + status, UNAVAILABLE + " [Last Firebase failure: HTTP " + status + "]", unavailable());
+    }
+    PushDiagnostics.recordFirebaseHttpStatus(-1);
+    PushDiagnostics.recordFirebaseHttpStatus(199);
+    PushDiagnostics.recordFirebaseHttpStatus(600);
+    equal("invalid statuses leave prior diagnostic", UNAVAILABLE + " [Last Firebase failure: HTTP 599]", unavailable());
+    PushDiagnostics.recordFirebaseHttpStatus(299);
+    equal("last successful status boundary clears failure", NO_CAPTURE, unavailable());
+    PushDiagnostics.recordFirebaseTransportFailure(new java.net.UnknownHostException("private"));
+    PushDiagnostics.recordFirebaseHttpStatus(403);
+    equal("HTTP response replaces old transport failure", UNAVAILABLE + " [Last Firebase failure: HTTP 403]", unavailable());
+    resetDiagnostics();
+  }
 
   private static void firebaseResponsePrivacy() {
     resetDiagnostics();
@@ -115,7 +144,7 @@ public final class PushDiagnosticsTest {
     PushDiagnostics.recordFirebaseResponse("HTTP response: [200 OK: {\"reason\":\"API_KEY_INVALID\"}]");
     PushDiagnostics.recordFirebaseResponse("HTTP response: [999 Unknown: private]");
     PushDiagnostics.recordFirebaseResponse("malformed without HTTP status");
-    equal("invalid or successful response ignored", UNAVAILABLE, unavailable());
+    equal("invalid or successful response ignored", NO_CAPTURE, unavailable());
     StringBuilder large = new StringBuilder("HTTP response: [403 Forbidden: ");
     while (large.length() < 66000) large.append('x');
     large.append("{\"reason\":\"API_KEY_ANDROID_APP_BLOCKED\"}]");
@@ -162,10 +191,10 @@ public final class PushDiagnosticsTest {
       java.lang.reflect.Constructor<?> ctor = record.getDeclaredConstructor(String.class, long.class);
       ctor.setAccessible(true);
       diagnosticSlot().set(ctor.newInstance("HTTP 403", System.nanoTime() - 16L * 60L * 1000000000L));
-      equal("stale diagnostic discarded", UNAVAILABLE, unavailable());
+      equal("stale diagnostic discarded", NO_CAPTURE, unavailable());
       equal("expired entry removed", true, diagnosticSlot().get() == null);
       diagnosticSlot().set(ctor.newInstance("HTTP 403", System.nanoTime() + 60000000000L));
-      equal("future clock value discarded", UNAVAILABLE, unavailable());
+      equal("future clock value discarded", NO_CAPTURE, unavailable());
       resetDiagnostics();
     } catch (Exception error) { throw new AssertionError(error); }
   }

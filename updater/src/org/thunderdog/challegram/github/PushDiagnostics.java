@@ -68,12 +68,26 @@ public final class PushDiagnostics {
             return summary + " [Last Firebase failure: " + last.description + "]";
           LAST_FIREBASE_FAILURE.compareAndSet(last, null);
         }
+        return summary + " [Firebase diagnostics v3: no recent HTTP/transport failure captured]";
       }
       return summary;
     }
 
     String name = current.getClass().getSimpleName();
     return hasText(name) ? name : current.getClass().getName();
+  }
+
+  /** Records the SDK's returned status even when its optional error body cannot be read. */
+  public static void recordFirebaseHttpStatus(int status) {
+    try {
+      if (status >= 200 && status < 300) {
+        LAST_FIREBASE_FAILURE.set(null);
+      } else if (status >= 300 && status <= 599) {
+        LAST_FIREBASE_FAILURE.set(new Failure("HTTP " + status, System.nanoTime()));
+      }
+    } catch (RuntimeException ignored) {
+      // Keep the original network result and retry behavior.
+    }
   }
 
   /** Reads the SDK's already-built log string, never the connection or raw device logs. */
