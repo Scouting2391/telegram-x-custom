@@ -5,8 +5,6 @@ on:
   workflow_run:
     workflows: [Build custom Telegram X update]
     types: [completed]
-  schedule:
-    - cron: "47 */6 * * *"
 
 permissions:
   contents: read
@@ -55,7 +53,7 @@ jobs:
         uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3
         with:
           path: fdroid-site
-          retention-days: 7
+          retention-days: 1
 
   deploy:
     needs: index

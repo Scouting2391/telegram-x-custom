@@ -1,4 +1,4 @@
-# Personal Telegram X with GitHub updates
+# Personal Telegram X with GitHub and F-Droid updates
 
 This project creates a custom-signed Telegram X APK from the official stable universal APK on [TGX-Android/Telegram-X](https://github.com/TGX-Android/Telegram-X/releases). It disables Telegram X's Google Play in-app update checks and its official Telegram-channel APK updater, and adds a GitHub Releases updater for this personal build.
 
@@ -6,13 +6,29 @@ The local bootstrap release is based on **0.29.1.1817**, Android 7.0 or later. G
 
 ## Install and use
 
-Install `Telegram-X-0.29.1.1817-github-r1.apk` over the previously provided custom 0.29.0.1813 APK. It uses the same package and personal signing key, with a higher Android version code. Keep the existing application installed. An official Telegram X installation with a different signing key cannot accept this APK as an update.
+Install the APK from the [latest custom release](https://github.com/Scouting2391/telegram-x-custom/releases/latest) over the previously provided custom APK. It uses the same package and personal signing key, with a higher Android version code. Keep the existing application installed. An official Telegram X installation with a different signing key cannot accept this APK as an update.
 
 At the first launch, the **GitHub updates** dialog asks for a public repository such as `your-account/telegram-x-custom`. It must host your custom releases, not the official upstream repository. The existing **Check for updates** and **Update automatically** actions also open this dialog. Save the repository, leave automatic checks enabled, or use **Check now**.
 
 Automatic checks run at most once every six hours while the app is open. A newer release produces an update prompt. Downloading happens inside the app; Android requires permission to install apps from Telegram X and asks you to confirm installation. Checks do not run as a permanent background service.
 
 **Live update feed:** [Scouting2391/telegram-x-custom](https://github.com/Scouting2391/telegram-x-custom/releases/latest). Enter `Scouting2391/telegram-x-custom` in the app's **GitHub updates** dialog, save it, and use **Check now**. The first custom release has been published by the verified workflow. If this release is already installed, the app correctly reports that no newer update is available.
+
+## F-Droid repository
+
+The live [repository page](https://scouting2391.github.io/telegram-x-custom/) includes an Add repository link and a QR code. In F-Droid, open **Settings → Repositories → +** and paste:
+
+```text
+https://scouting2391.github.io/telegram-x-custom/fdroid/repo?fingerprint=C0A998D786254CE3DFB2A3CD12698153EEEE9E05A4293E7E8804145EBE750339
+```
+
+Search for **Telegram X Custom** after refreshing repositories. This feed contains the same signed APK as GitHub Releases and can update the existing personal build without uninstalling it. It is an independent binary repository, separate from F-Droid's official collection. Google Play update blocking remains in the APK. Google Play Services and Firebase are still included and are disclosed in the package's F-Droid anti-features.
+
+`.github/workflows/fdroid.yml` refreshes the feed automatically after the trusted custom release workflow completes successfully, including its scheduled checks. It can also be run manually. The index is signed in the existing protected `signing` environment, with read-only repository access; a separate GitHub Pages job deploys only the verified public files and has no signing secrets. The existing certificate signs the repository index as well as the unchanged APK, so the pinned repository fingerprint is its SHA-256 fingerprint shown above. The previous private key backup remains necessary for both update channels.
+
+The official `fdroidserver` 2.4.5 tools generate legacy and modern indexes. Before deployment, checks authenticate the signed entry, the v2 index's digest, package identity, version code, APK digest and size, and the expected APK signer. Public artifact uploads exclude configuration files, signing keys, passwords, and internal status logs. Deployment artifacts expire after one day. The first [F-Droid build and deployment](https://github.com/Scouting2391/telegram-x-custom/actions/runs/38661409494) passed all nine policy tests, and the live index and APK were independently downloaded and verified. Android/F-Droid client installation still requires a phone-side check.
+
+GitHub Pages is configured to deploy through GitHub Actions. When reproducing this setup, enable that source in **Settings → Pages** and preserve the existing signing environment and certificate. The site currently serves build **1817303**, custom revision 3 of 0.29.1.1817.
 
 ## Reproduce the GitHub release setup
 
