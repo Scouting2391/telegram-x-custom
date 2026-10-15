@@ -311,6 +311,33 @@ def collect(decoded):
     return {p.relative_to(decoded).as_posix(): p.read_text(encoding='utf-8') for p in decoded.glob('smali*/**/*.smali')}
 
 
+def compatibility_report(files, tag, digest, changes=None, expected=None, error=None):
+    """Public evidence for maintenance; never receives signing keys or configuration."""
+    markers = ('Unable to initialize Google Play update manager', 'requestUpdateInfo(%s)',
+               '(?<=: )[A-Z_]+$', 'Error when communicating with the Firebase Installations server API.',
+               'FirebaseMessaging: registration failed (')
+    candidates = []
+    for path, source in files.items():
+        found = [marker for marker in markers if marker in source]
+        if not found:
+            continue
+        lines = source.splitlines()
+        positions = [i for i, line in enumerate(lines) if any(marker in line for marker in found)]
+        snippets = []
+        for position in positions[:3]:
+            snippets.append({'line': position + 1, 'source': '\n'.join(lines[max(0, position - 12):position + 28])[:12000]})
+        candidates.append({'path': path, 'class': class_name(source), 'markers': found, 'snippets': snippets})
+        if len(candidates) >= 12:
+            break
+    return {'schemaVersion': 1, 'upstreamTag': tag, 'inputApkSha256': digest,
+            'status': 'review-required' if error is not None else 'recognized',
+            'error': (type(error).__name__ + ': ' + str(error))[:1500] if error is not None else None,
+            'changedMethods': {p: sorted(signatures) for p, signatures in (expected or {}).items()},
+            'changedClassCount': len(changes or {}), 'candidates': candidates,
+            'runtimeDeviceTest': 'not performed',
+            'publicationAllowedByThisReport': False}
+
+
 def audit_classes(original, verified, expected):
     # DEX placement may change to remain below the 65,536 method-reference limit.
     indexed = {p.split('/', 1)[1]: t for p, t in verified.items()}
@@ -343,14 +370,18 @@ def audit_classes(original, verified, expected):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    for name in ('input-apk', 'release-json', 'output-dir', 'work-dir', 'java-home', 'android-jar', 'build-tools', 'apktool', 'keystore', 'keystore-password-file'):
+    for name in ('input-apk', 'release-json', 'output-dir', 'work-dir', 'java-home', 'android-jar', 'build-tools', 'apktool'):
         parser.add_argument('--' + name, required=True)
+    parser.add_argument('--keystore')
+    parser.add_argument('--keystore-password-file')
+    parser.add_argument('--check-compatibility', action='store_true', help='Validate patch matching without signing or building an APK')
     parser.add_argument('--key-alias', default='telegram-x-custom')
     parser.add_argument('--revision', type=int, default=1)
     parser.add_argument('--reuse-decode', action='store_true', help='Local bootstrap only: use pre-decoded input in work-dir/decoded')
     args = parser.parse_args()
     require(1 <= args.revision <= 99, 'Custom revision must be 1..99')
-    paths = {name: Path(getattr(args, name.replace('-', '_'))).resolve() for name in ('input-apk', 'release-json', 'output-dir', 'work-dir', 'java-home', 'android-jar', 'build-tools', 'apktool', 'keystore', 'keystore-password-file')}
+    require(args.check_compatibility or (args.keystore and args.keystore_password_file), 'Signing files are required for an APK build')
+    paths = {name: Path(getattr(args, name.replace('-', '_'))).resolve() for name in ('input-apk', 'release-json', 'output-dir', 'work-dir', 'java-home', 'android-jar', 'build-tools', 'apktool', 'keystore', 'keystore-password-file') if getattr(args, name.replace('-', '_'))}
     work, out = paths['work-dir'], paths['output-dir']
     work.mkdir(parents=True, exist_ok=True)
     out.mkdir(parents=True, exist_ok=True)
@@ -387,7 +418,18 @@ def main():
     print('Discovering and applying reviewed code hooks…', flush=True)
     original = collect(decoded)
     resources = run([tools / ('aapt2' + exe), 'dump', 'resources', paths['input-apk']], quiet=True)
-    changes, expected = patch_hooks(original, resources)
+    try:
+        changes, expected = patch_hooks(original, resources)
+    except Exception as error:
+        report = compatibility_report(original, tag, asset['digest'][7:], error=error)
+        (out / 'compatibility-report.json').write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')
+        print('Patch compatibility requires maintenance:\n' + json.dumps(report, indent=2), flush=True)
+        raise
+    report = compatibility_report(original, tag, asset['digest'][7:], changes, expected)
+    (out / 'compatibility-report.json').write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')
+    if args.check_compatibility:
+        print(json.dumps({k: v for k, v in report.items() if k != 'candidates'}, indent=2), flush=True)
+        return
     patches = []
     for relative, text in changes.items():
         (decoded / relative).write_text(text, encoding='utf-8')

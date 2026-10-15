@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import base64
 import hashlib
+import html
 import json
 import os
 from pathlib import Path
@@ -193,6 +194,39 @@ def clean_secrets(_args=None):
         (Path(".ci/signing") / filename).unlink(missing_ok=True)
 
 
+def check_compatibility(_args=None):
+    sdk = Path(os.environ.get('ANDROID_HOME') or os.environ.get('ANDROID_SDK_ROOT') or '')
+    java = os.environ.get('JAVA_HOME', '')
+    require(java, 'JAVA_HOME is required')
+    subprocess.run([sys.executable, 'scripts/build_custom.py', '--check-compatibility',
+                    '--input-apk', '.ci/original.apk', '--release-json', '.ci/upstream-release.json',
+                    '--output-dir', 'dist', '--work-dir', 'build-work', '--java-home', java,
+                    '--android-jar', str(sdk / 'platforms/android-35/android.jar'),
+                    '--build-tools', str(sdk / 'build-tools/35.0.0'), '--apktool', '.ci/apktool.jar'], check=True)
+
+
+def summarize(_args=None):
+    path = Path('dist/compatibility-report.json')
+    if not path.is_file():
+        text = 'No patch compatibility report was produced. Inspect the failed input, SDK, or build step in this run.\n'
+    else:
+        report = json.loads(path.read_text(encoding='utf-8'))
+        status = report.get('status')
+        require(status in ('recognized', 'review-required'), 'Invalid compatibility status')
+        message = report.get('error') or 'Reviewed patch patterns matched. APK publication still requires all build, signing, and audit checks.'
+        text = ('### Telegram X patch compatibility\n\n'
+                + 'Upstream: `' + str(report.get('upstreamTag')) + '`\n\n'
+                + 'Compatibility: **' + status + '**\n\n'
+                + '<pre>' + html.escape(str(message)[:2000]) + '</pre>\n\n'
+                + 'The maintenance artifact contains public upstream metadata, matching code excerpts, and any generated patch. '
+                + 'An unfamiliar layout stops publication and leaves the current release available.\n')
+    summary = os.environ.get('GITHUB_STEP_SUMMARY')
+    if summary:
+        with open(summary, 'a', encoding='utf-8') as out:
+            out.write(text)
+    print(text)
+
+
 def build(args):
     revision = checked_revision(args.revision)
     encoded_key = os.environ.pop("TGX_KEYSTORE_BASE64", "")
@@ -328,6 +362,10 @@ def main():
     command = commands.add_parser("build")
     command.add_argument("--revision", default="1")
     command.set_defaults(func=build)
+    command = commands.add_parser('check-compatibility')
+    command.set_defaults(func=check_compatibility)
+    command = commands.add_parser('summarize')
+    command.set_defaults(func=summarize)
     command = commands.add_parser("clean-secrets")
     command.set_defaults(func=clean_secrets)
     command = commands.add_parser("publish")

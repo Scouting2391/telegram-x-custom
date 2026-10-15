@@ -1,8 +1,21 @@
 name: Build custom Telegram X update
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/release.yml
+      - scripts/build_custom.py
+      - scripts/release_pipeline.py
+      - updater/**
+      - tests/**
   workflow_dispatch:
     inputs:
+      check_only:
+        description: "Check compatibility with the latest official APK without publishing"
+        required: false
+        default: false
+        type: boolean
       revision:
         description: "Custom revision for the latest stable upstream release (1-99)"
         required: true
@@ -51,7 +64,7 @@ jobs:
 
   build:
     needs: discover
-    if: needs.discover.outputs.needs_build == 'true'
+    if: needs.discover.outputs.needs_build == 'true' || inputs.check_only == true
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     environment: signing
@@ -88,7 +101,11 @@ jobs:
           python tests/run_updater_tests.py
           --java-home "$JAVA_HOME"
           --android-jar "$ANDROID_HOME/platforms/android-35/android.jar"
+      - name: Check compatibility without signing or publishing
+        if: inputs.check_only == true
+        run: python scripts/release_pipeline.py check-compatibility
       - name: Build, sign, and verify
+        if: inputs.check_only != true
         env:
           TGX_KEYSTORE_BASE64: ${{ secrets.TGX_KEYSTORE_BASE64 }}
           TGX_KEYSTORE_PASSWORD: ${{ secrets.TGX_KEYSTORE_PASSWORD }}
@@ -96,7 +113,22 @@ jobs:
       - name: Remove temporary signing files
         if: always()
         run: python scripts/release_pipeline.py clean-secrets
+      - name: Summarize patch compatibility
+        if: always()
+        run: python scripts/release_pipeline.py summarize
+      - name: Save public maintenance evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: maintenance-report
+          path: |
+            dist/compatibility-report.json
+            dist/bytecode-changes.patch
+            .ci/upstream-release.json
+          if-no-files-found: warn
+          retention-days: 7
       - id: upload
+        if: inputs.check_only != true
         name: Pass only verified public release files to publisher
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -112,7 +144,7 @@ jobs:
 
   publish:
     needs: [discover, build]
-    if: needs.build.result == 'success'
+    if: needs.build.result == 'success' && inputs.check_only != true && needs.discover.outputs.needs_build == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
