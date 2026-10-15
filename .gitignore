@@ -3,6 +3,7 @@
 dist/
 build-work/
 .test-work/
+fdroid-site/
 __pycache__/
 *.pyc
 *.jks
