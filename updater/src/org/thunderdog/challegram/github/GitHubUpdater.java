@@ -57,6 +57,7 @@ import javax.net.ssl.HttpsURLConnection;
 public final class GitHubUpdater {
   private static final String TAG = "TGX-GitHubUpdater";
   private static final String PREFS = "personal_github_updater_v1";
+  private static final String DEFAULT_REPOSITORY = "Scouting2391/telegram-x-custom";
   private static final String MANIFEST_NAME = "tgx-update.json";
   private static final long CHECK_INTERVAL = 6L * 60 * 60 * 1000;
   private static final long REMIND_INTERVAL = 24L * 60 * 60 * 1000;
@@ -96,10 +97,7 @@ public final class GitHubUpdater {
       return;
     }
     String repository = prefs.getString("repository", "");
-    if (repository.length() == 0) {
-      if (!prefs.getBoolean("setup_shown", false) && !dialogShowing()) showSettings(activity);
-      return;
-    }
+    if (repository.length() == 0) return;
     if (!prefs.getBoolean("automatic", true) || dialogShowing()) return;
     if (pending != null) {
       if (elapsed(prefs.getLong("ready_prompt_at", 0), REMIND_INTERVAL)) startReady(activity, pending, true);
@@ -126,8 +124,8 @@ public final class GitHubUpdater {
     int padding = (int) (24 * activity.getResources().getDisplayMetrics().density);
     layout.setPadding(padding, padding / 2, padding, 0);
     TextView explanation = new TextView(activity);
-    explanation.setText("Use the public GitHub repository that publishes your custom Telegram X updates. " +
-      "The original Telegram X downloads cannot update this custom app.");
+    explanation.setText("Updates are already configured for this custom app. " +
+      "You can change the GitHub repository or turn automatic checks off here.");
     layout.addView(explanation);
     final EditText repository = new EditText(activity);
     repository.setSingleLine(true);
@@ -151,7 +149,6 @@ public final class GitHubUpdater {
       .setPositiveButton("Save", null).setNeutralButton("Check now", null)
       .setNegativeButton("Cancel", null).create();
     dialog.setOnShowListener(ignored -> {
-      prefs.edit().putBoolean("setup_shown", true).apply();
       dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(view -> {
         Activity live = live(ref);
         if (live == null) return;
@@ -701,7 +698,20 @@ public final class GitHubUpdater {
     UpdateException(String message) { super(message); }
   }
 
-  private static SharedPreferences prefs(Context context) { return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE); }
+  private static SharedPreferences prefs(Context context) {
+    SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+    initializeDefaults(prefs);
+    return prefs;
+  }
+
+  private static void initializeDefaults(SharedPreferences prefs) {
+    if (prefs.getBoolean("default_channel_initialized", false)) return;
+    SharedPreferences.Editor editor = prefs.edit().putBoolean("default_channel_initialized", true);
+    // Also migrate older installs that reached setup but never saved a channel.
+    if (prefs.getString("repository", "").length() == 0) editor.putString("repository", DEFAULT_REPOSITORY);
+    if (!prefs.contains("automatic")) editor.putBoolean("automatic", true);
+    editor.apply();
+  }
   private static File directory(Context context) { return new File(context.getFilesDir(), "media/github-updates"); }
   private static boolean usable(Activity activity) { return activity != null && !activity.isFinishing() && !activity.isDestroyed(); }
   private static Activity live(WeakReference<Activity> ref) { Activity activity = ref.get(); return usable(activity) ? activity : null; }

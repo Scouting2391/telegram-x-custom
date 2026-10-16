@@ -160,6 +160,9 @@ def main():
         subprocess.run([str(javac), '--release', '8', '-Xlint:-options', '-cp', cp, '-d', str(classes),
                         *map(str, stubs), str(test)], check=True)
         subprocess.run([str(java), '-cp', os.pathsep.join([str(classes), cp]), 'UpdaterPolicyTest'], check=True)
+        subprocess.run([str(javac), '--release', '8', '-Xlint:-options', '-cp', cp,
+                        '-d', str(classes), str(ROOT / 'tests/UpdaterDefaultsTest.java')], check=True)
+        subprocess.run([str(java), '-cp', os.pathsep.join([str(classes), cp]), 'UpdaterDefaultsTest'], check=True)
         subprocess.run([str(javac), '--release', '8', '-Xlint:-options', '-cp', str(prod),
                         '-d', str(classes), str(ROOT / 'tests/PushDiagnosticsTest.java')], check=True)
         subprocess.run([str(java), '-cp', os.pathsep.join([str(classes), str(prod)]), 'PushDiagnosticsTest'], check=True)

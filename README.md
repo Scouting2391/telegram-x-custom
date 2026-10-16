@@ -8,11 +8,11 @@ The local bootstrap release is based on **0.29.1.1817**, Android 7.0 or later. G
 
 Install the APK from the [latest custom release](https://github.com/Scouting2391/telegram-x-custom/releases/latest) over the previously provided custom APK. It uses the same package and personal signing key, with a higher Android version code. Keep the existing application installed. An official Telegram X installation with a different signing key cannot accept this APK as an update.
 
-At the first launch, the **GitHub updates** dialog asks for a public repository such as `your-account/telegram-x-custom`. It must host your custom releases, not the official upstream repository. The existing **Check for updates** and **Update automatically** actions also open this dialog. Save the repository, leave automatic checks enabled, or use **Check now**.
+Starting with custom revision 4, fresh installs automatically use `Scouting2391/telegram-x-custom` with automatic checks enabled. There is no first-launch setup dialog or repository to enter. Older installs with an empty update channel adopt this default once; existing nonempty channels and disabled automatic-check preferences are preserved. The existing **Check for updates** and **Update automatically** actions still open **GitHub updates** if you want to check manually or change these settings.
 
 Automatic checks run at most once every six hours while the app is open. A newer release produces an update prompt. Downloading happens inside the app; Android requires permission to install apps from Telegram X and asks you to confirm installation. Checks do not run as a permanent background service.
 
-**Live update feed:** [Scouting2391/telegram-x-custom](https://github.com/Scouting2391/telegram-x-custom/releases/latest). Enter `Scouting2391/telegram-x-custom` in the app's **GitHub updates** dialog, save it, and use **Check now**. The first custom release has been published by the verified workflow. If this release is already installed, the app correctly reports that no newer update is available.
+**Live update feed:** [Scouting2391/telegram-x-custom](https://github.com/Scouting2391/telegram-x-custom/releases/latest). This channel is built into new installs. For an older APK that still asks for setup, enter `Scouting2391/telegram-x-custom` and choose **Check now**, or install the latest custom APK over it. If the latest release is already installed, the app correctly reports that no newer update is available.
 
 ## F-Droid repository
 
@@ -28,7 +28,7 @@ Search for **Telegram X Custom** after refreshing repositories. This feed contai
 
 The official `fdroidserver` 2.4.5 tools generate legacy and modern indexes. Before deployment, checks authenticate the signed entry, the v2 index's digest, package identity, version code, APK digest and size, and the expected APK signer. Public artifact uploads exclude configuration files, signing keys, passwords, and internal status logs. Deployment artifacts expire after one day. The first [F-Droid build and deployment](https://github.com/Scouting2391/telegram-x-custom/actions/runs/38661409494) passed all nine policy tests, and the live index and APK were independently downloaded and verified. Android/F-Droid client installation still requires a phone-side check.
 
-GitHub Pages is configured to deploy through GitHub Actions. When reproducing this setup, enable that source in **Settings → Pages** and preserve the existing signing environment and certificate. The site currently serves build **1817303**, custom revision 3 of 0.29.1.1817.
+GitHub Pages is configured to deploy through GitHub Actions. When reproducing this setup, enable that source in **Settings → Pages** and preserve the existing signing environment and certificate. The feed follows the latest verified custom release.
 
 ## Reproduce the GitHub release setup
 
@@ -40,7 +40,7 @@ The current repository and its private signing environment are already configure
    - `TGX_KEYSTORE_PASSWORD`: the existing key password, without a trailing newline.
 3. In repository **Settings → Actions → General**, allow the included actions and grant the release workflow the necessary repository write permission. The publisher job requests `contents: write`; the build job only requests read access.
 4. Run **Actions → Build custom Telegram X update → Run workflow** on the default branch, using revision `1`. Inspect the resulting release and verification report.
-5. Enter this repository's `owner/name` in the app's **GitHub updates** dialog and save it. Use **Check now** to confirm that the feed is accessible.
+5. The app defaults to `Scouting2391/telegram-x-custom`. When reproducing this project in a different repository, update `DEFAULT_REPOSITORY` in `GitHubUpdater.java`, or select that channel manually in **GitHub updates**. Use **Check now** to confirm that the feed is accessible.
 
 Keep the existing signing key: generating another key prevents updates to the installed custom APK. The private local backup is supplied separately and is not included in this repository package.
 
@@ -80,6 +80,8 @@ Custom revision 2 adds a diagnostic suffix such as `[Last Firebase failure: HTTP
 Custom revision 3 captures the HTTP status before the SDK's optional error-body logger, so responses with absent or unreadable bodies are included. Successful HTTP responses clear earlier failures. When no recent failure was captured, the generic error explicitly includes `[Firebase diagnostics v3: no recent HTTP/transport failure captured]`. This distinguishes the new diagnostics from older builds without assuming a network or authentication cause. The GitHub updates dialog also shows the installed build number; revision 3 of this release is **1817303**.
 
 This is a diagnostic update. It does not establish that notification delivery is fixed. Install it through **GitHub updates → Check now**, retry push registration, and inspect the new first error line to determine the repair. Firebase's network requests, authentication, certificate checks, and retry/backoff behavior are preserved.
+
+Custom revision 4 retains these diagnostics and removes first-launch updater setup. It includes 13 additional preference checks covering fresh installs, upgrades with an empty channel, preservation of existing channels and disabled checks, and one-time initialization. Android's installation permission and confirmation still apply when installing an update.
 
 The supplied log does not prove a signing restriction or identify an HTTP response. Notifications arriving now do not confirm successful Firebase registration: Telegram X can also receive messages while its Telegram connection is active. Use the existing retry action if the error persists. Reliable push delivery with the application idle must be checked on the phone.
 
