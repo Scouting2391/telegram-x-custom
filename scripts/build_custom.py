@@ -260,11 +260,110 @@ def patch_hooks(files, resources):
         body = body[:body.rfind('.end method')] + '\n' + '\n'.join(additions) + '.end method'
         patched_net = replace_method(patched_net, signature, body)
     save(net_path, patched_net, [s for s, _ in net_methods])
+    patch_push_warning_ui(files, resources, changes, expected)
     return changes, expected
 
 
-def resource_id(resources, name):
-    matches = re.findall(r'resource (0x[0-9a-f]+) id/' + re.escape(name) + r'\b', resources)
+def patch_push_warning_ui(files, resources, changes, expected):
+    '''Defer only the two UI warnings; retain raw status, retry, and share actions.'''
+    policy = 'Lorg/thunderdog/challegram/github/PushWarningPolicy;'
+    def save(path, text, signature):
+        changes[path] = text
+        expected.setdefault(path, set()).add(signature)
+
+    setters = [(p, t, sig, body) for p, t in files.items()
+               if 'push_reported_error_date' in t
+               for sig, body in methods(t).items()
+               if sig.endswith('(ILjava/lang/String;Ljava/lang/Throwable;)V') and 'push_reported_error_date' in body]
+    require(len(setters) == 1, 'Unknown push token state observer')
+    path, text, signature, body = setters[0]
+    manager = class_name(text)
+    state = re.findall(r'iput-byte p1, p0, ' + re.escape(manager) + r'->(\w+):B', body)
+    error = re.search(r'    iput-object p3, p0, ' + re.escape(manager) + r'->\w+:Ljava/lang/Throwable;', body)
+    require(len(state) == 1 and error and '.locals 5' in body and 'monitor-enter p0' in body,
+            'Unreviewed push state observer layout')
+    body = body[:error.end()] + f'\n    invoke-static {{p1, p2}}, {policy}->observeTokenState(ILjava/lang/String;)V\n' + body[error.end():]
+    save(path, replace_method(text, signature, body), signature)
+
+    background = resource_id(resources, 'NotificationsErrorBackground', 'string')
+    notification_settings = resource_id(resources, 'btn_notificationSettings')
+    settings = [(p, t, sig, body) for p, t in files.items() if background in t
+                for sig, body in methods(t).items()
+                if sig.endswith('(Z)V') and background in body and notification_settings in body]
+    require(len(settings) == 1, 'Unknown settings notification warning renderer')
+    path, text, signature, body = settings[0]
+    raw = list(re.finditer(r'    invoke-virtual \{v\d+\}, (L[^;]+;)->(\w+)\(\)I\n(?:\s*\.line \d+\n|\s*\n)*    move-result (v\d+)', body))
+    require(len(raw) == 1 and '.locals 10' in body and raw[0][3] == 'v9', 'Unreviewed settings status registers')
+    status_class, status_name = raw[0][1], raw[0][2]
+    require(all(int(v) < 10 for v in re.findall(r'\bv(\d+)\b', body)), 'Settings aliases parameter registers')
+    status_text = [t for t in files.values() if class_name(t) == status_class]
+    require(len(status_text) == 1, 'Missing notification status provider')
+    status_methods = [b for sig, b in methods(status_text[0]).items() if sig.endswith(' ' + status_name + '()I')]
+    require(len(status_methods) == 1 and 'android.permission.POST_NOTIFICATIONS' in status_methods[0] and
+            f'{manager}->{state[0]}:B' in status_methods[0] and
+            re.search(r'const/16 [vp]\d+, 0x8\b', status_methods[0]), 'Unreviewed notification status enum')
+    call = status_class + '->' + status_name + '()I'
+    item = raw[0]
+    insert = f'''
+    invoke-static {{v9}}, {policy}->filterStatus(I)I
+    move-result v10
+    if-eq v9, v10, :push_warning_status_ready
+    const/4 v3, 0x0
+    :push_warning_status_ready
+    move v9, v10
+'''
+    require(':push_warning_status_ready' not in body and body.count('    :goto_1\n') == 1 and
+            'move-result v3' in body, 'Unreviewed settings warning flag')
+    body = body[:item.end()] + insert + body[item.end():]
+    body = body.replace('.locals 10', '.locals 11', 1)
+    # If a chat category is blocked as well, retain its error description and icon.
+    body = body.replace('    :goto_1\n', '''    :goto_1
+    if-eqz v2, :push_warning_description_ready
+    const/4 v3, 0x1
+    :push_warning_description_ready
+''', 1)
+    save(path, replace_method(text, signature, body), signature)
+
+    guide = resource_id(resources, 'NotificationsGuideFirebaseError', 'string')
+    controllers = [(p, t) for p, t in files.items() if guide in t and
+                   any(sig.endswith('(I)Ljava/lang/CharSequence;') and guide in b for sig,b in methods(t).items())]
+    require(len(controllers) == 1, 'Unknown notifications warning controller')
+    path, text = controllers[0]
+    advanced = resource_id(resources, 'btn_showAdvanced')
+    renderers = [(sig, b) for sig, b in methods(text).items() if call in b and advanced in b and
+                 sig != 'public final onClick(Landroid/view/View;)V']
+    require(len(renderers) == 2 and any(sig.endswith('()V') for sig,b in renderers) and
+            any('(Landroid/content/Context;' in sig for sig,b in renderers), 'Unknown notification UI refresh paths')
+    patched = text
+    read = re.compile(r'    invoke-virtual \{[vp]\d+\}, ' + re.escape(call) + r'\n(?:\s*\.line \d+\n|\s*\n)*    move-result ([vp]\d+)')
+    for sig, body in renderers:
+        hits = list(read.finditer(body))
+        require(1 <= len(hits) <= 4, 'Unexpected UI notification status reads')
+        for hit in reversed(hits):
+            reg = hit[1]
+            body = body[:hit.end()] + f'\n    invoke-static/range {{{reg} .. {reg}}}, {policy}->filterStatus(I)I\n    move-result {reg}\n' + body[hit.end():]
+        patched = replace_method(patched, sig, body)
+        expected.setdefault(path, set()).add(sig)
+    descriptions = [(sig,b) for sig,b in methods(text).items() if guide in b and sig.endswith('(I)Ljava/lang/CharSequence;')]
+    require(len(descriptions) == 1, 'Unknown notification description renderer')
+    sig, body = descriptions[0]
+    local = re.search(r'^    \.locals (\d+)\n', body, re.M)
+    require(local and int(local[1]) >= 1 and ':push_warning_full_description' not in body, 'Unknown description locals')
+    compact = '''
+    const/16 v0, 0x8
+    if-ne p1, v0, :push_warning_full_description
+    const-string v0, "Push registration is unavailable. Background notifications may be delayed. Tap above to retry or share the error details."
+    return-object v0
+    :push_warning_full_description
+'''
+    body = body[:local.end()] + compact + body[local.end():]
+    patched = replace_method(patched, sig, body)
+    expected.setdefault(path, set()).add(sig)
+    changes[path] = patched
+
+
+def resource_id(resources, name, kind='id'):
+    matches = re.findall(r'resource (0x[0-9a-f]+) ' + re.escape(kind) + '/' + re.escape(name) + r'\b', resources)
     require(len(matches) == 1, f'Unknown resource ID: {name}')
     return matches[0]
 
@@ -513,6 +612,7 @@ def main():
               'githubUpdaterConfigurableInApp': True, 'firebaseCauseDiagnosticsEnabled': True,
               'firebaseHttpAndTransportDiagnosticsEnabled': True,
               'firebaseBodyIndependentHttpDiagnosticsEnabled': True,
+              'temporaryPushWarningGraceMinutes': 15, 'pushWarningUiOnly': True,
               'signatureVerification': 'Android v2/v3 passed', 'alignment': '4-byte and 16 KiB native alignment passed',
               'runtimeDeviceTest': 'not performed', 'buildMethod': 'reviewed APK patch plus compiled Android helper'}
     (out / 'tgx-update.json').write_text(json.dumps(metadata, indent=2) + '\n', encoding='utf-8')

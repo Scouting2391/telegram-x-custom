@@ -15,14 +15,14 @@ public class UpdaterDefaultsTest {
     final SharedPreferences prefs = (SharedPreferences) Proxy.newProxyInstance(
       SharedPreferences.class.getClassLoader(), new Class<?>[]{SharedPreferences.class}, (proxy, method, args) -> {
         switch (method.getName()) {
-          case "getString": case "getBoolean": return values.containsKey(args[0]) ? values.get(args[0]) : args[1];
+          case "getString": case "getBoolean": case "getLong": return values.containsKey(args[0]) ? values.get(args[0]) : args[1];
           case "contains": return values.containsKey(args[0]);
           case "edit":
             Map<String, Object> pending = new HashMap<>();
             return Proxy.newProxyInstance(SharedPreferences.Editor.class.getClassLoader(),
               new Class<?>[]{SharedPreferences.Editor.class}, (editor, editMethod, editArgs) -> {
                 switch (editMethod.getName()) {
-                  case "putString": case "putBoolean": pending.put((String) editArgs[0], editArgs[1]); return editor;
+                  case "putString": case "putBoolean": case "putLong": pending.put((String) editArgs[0], editArgs[1]); return editor;
                   case "apply": values.putAll(pending); writes++; return null;
                   default: throw new AssertionError("Unexpected edit: " + editMethod.getName());
                 }

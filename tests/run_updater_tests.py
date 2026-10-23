@@ -16,6 +16,8 @@ STUBS = {
     'android/os/Build.java': 'package android.os; public class Build { public static class VERSION { public static int SDK_INT=31; } }',
     'android/content/Context.java': '''package android.content; public class Context {
       public String name="org.thunderdog.challegram"; public android.content.pm.PackageManager manager;
+      public android.content.SharedPreferences preferences;
+      public android.content.SharedPreferences getSharedPreferences(String name,int mode){return preferences;}
       public String getPackageName(){return name;} public android.content.pm.PackageManager getPackageManager(){return manager;}
     }''',
     'android/content/pm/PackageManager.java': '''package android.content.pm; public class PackageManager {
@@ -163,6 +165,9 @@ def main():
         subprocess.run([str(javac), '--release', '8', '-Xlint:-options', '-cp', cp,
                         '-d', str(classes), str(ROOT / 'tests/UpdaterDefaultsTest.java')], check=True)
         subprocess.run([str(java), '-cp', os.pathsep.join([str(classes), cp]), 'UpdaterDefaultsTest'], check=True)
+        subprocess.run([str(javac), '--release', '8', '-Xlint:-options', '-cp', os.pathsep.join([str(classes), cp]),
+                        '-d', str(classes), str(ROOT / 'tests/PushWarningPolicyTest.java')], check=True)
+        subprocess.run([str(java), '-cp', os.pathsep.join([str(classes), cp]), 'PushWarningPolicyTest'], check=True)
         subprocess.run([str(javac), '--release', '8', '-Xlint:-options', '-cp', str(prod),
                         '-d', str(classes), str(ROOT / 'tests/PushDiagnosticsTest.java')], check=True)
         subprocess.run([str(java), '-cp', os.pathsep.join([str(classes), str(prod)]), 'PushDiagnosticsTest'], check=True)

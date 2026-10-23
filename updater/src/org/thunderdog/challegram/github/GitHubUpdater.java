@@ -701,6 +701,7 @@ public final class GitHubUpdater {
   private static SharedPreferences prefs(Context context) {
     SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
     initializeDefaults(prefs);
+    PushWarningPolicy.initialize(context);
     return prefs;
   }
 

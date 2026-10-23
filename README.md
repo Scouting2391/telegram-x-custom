@@ -85,6 +85,14 @@ Custom revision 4 retains these diagnostics and removes first-launch updater set
 
 The supplied log does not prove a signing restriction or identify an HTTP response. Notifications arriving now do not confirm successful Firebase registration: Telegram X can also receive messages while its Telegram connection is active. Use the existing retry action if the error persists. Reliable push delivery with the application idle must be checked on the phone.
 
+## Less intrusive registration warnings
+
+Custom revision 5 gives temporary Firebase registration failures a **15-minute grace period** in the main Settings and Notifications screens. Brief failures remain in the original token state, logs, and shareable diagnostics, without immediately displaying the prominent warning. Retrying does not restart this period; successful registration resets it. The small timestamp/temporary-status preference survives an app restart and contains no error text, messages, tokens, or account identifiers.
+
+After the grace period, the next settings refresh, resume, or token-state update can display a compact warning instead of the long troubleshooting checklist. The existing notification-settings action still opens **Try again** and **Share error details**, including during the grace period. No new background monitoring service or timer is added.
+
+Known configuration errors, Android permission/channel blocks, and recorded notification-display failures stay immediately visible. A blocked chat category also retains its warning when a temporary registration error is quiet. Message-send failure indicators, Firebase requests, retry/backoff behavior, and the real registration state are preserved. This is a presentation change, not a repair to Firebase registration or proof of delivery: the app cannot reliably identify an incoming push that never reached it. Phone behavior still requires a device test.
+
 ## Build and verification
 
 Requirements: Python 3.11 or later, JDK 21, Android SDK platform 35 or later, build-tools 35 or later, and the pinned Apktool 3.0.3 JAR. CI validates the fixed Android SDK components provided by the hosted runner. Helpers use Android framework APIs and target minimum API 24.
