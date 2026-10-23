@@ -613,6 +613,7 @@ def main():
               'firebaseHttpAndTransportDiagnosticsEnabled': True,
               'firebaseBodyIndependentHttpDiagnosticsEnabled': True,
               'temporaryPushWarningGraceMinutes': 15, 'pushWarningUiOnly': True,
+              'boundedLocalPushHistory': True, 'privateDiagnosticUploadsOptIn': True,
               'signatureVerification': 'Android v2/v3 passed', 'alignment': '4-byte and 16 KiB native alignment passed',
               'runtimeDeviceTest': 'not performed', 'buildMethod': 'reviewed APK patch plus compiled Android helper'}
     (out / 'tgx-update.json').write_text(json.dumps(metadata, indent=2) + '\n', encoding='utf-8')

@@ -93,6 +93,10 @@ After the grace period, the next settings refresh, resume, or token-state update
 
 Known configuration errors, Android permission/channel blocks, and recorded notification-display failures stay immediately visible. A blocked chat category also retains its warning when a temporary registration error is quiet. Message-send failure indicators, Firebase requests, retry/backoff behavior, and the real registration state are preserved. This is a presentation change, not a repair to Firebase registration or proof of delivery: the app cannot reliably identify an incoming push that never reached it. Phone behavior still requires a device test.
 
+## Automatic diagnostic capture
+
+Custom revision 6 adds bounded, technical-only history of Firebase registration failures and recoveries. Open **GitHub updates → Push diagnostics** to view or share it, or explicitly pair an optional private GitHub inbox for automatic hourly batches while the app process is running. No upload credential is embedded in the APK, and uploads are off until pairing. A separate private inbox and phone-only fine-grained token are needed; the public update repository is refused. Codex review also needs private repository access and activation after a real report test. See [DIAGNOSTICS.md](DIAGNOSTICS.md) for setup, data limits, controls, and verification limits.
+
 ## Build and verification
 
 Requirements: Python 3.11 or later, JDK 21, Android SDK platform 35 or later, build-tools 35 or later, and the pinned Apktool 3.0.3 JAR. CI validates the fixed Android SDK components provided by the hosted runner. Helpers use Android framework APIs and target minimum API 24.

@@ -80,6 +80,7 @@ public final class PushDiagnostics {
   /** Records the SDK's returned status even when its optional error body cannot be read. */
   public static void recordFirebaseHttpStatus(int status) {
     try {
+      if (status >= 200 && status <= 599) DiagnosticHistory.GLOBAL.record("HTTP", Integer.toString(status), System.currentTimeMillis());
       if (status >= 200 && status < 300) {
         LAST_FIREBASE_FAILURE.set(null);
       } else if (status >= 300 && status <= 599) {
@@ -99,12 +100,16 @@ public final class PushDiagnostics {
       if (!code.find()) return;
       int status = Integer.parseInt(code.group(1));
       if (status < 300 || status > 599) return;
+      DiagnosticHistory.GLOBAL.record("HTTP", Integer.toString(status), System.currentTimeMillis());
       StringBuilder safe = new StringBuilder("HTTP ").append(status);
       Set<String> added = new HashSet<>();
       Matcher fields = ERROR_FIELD.matcher(sdkLog).region(0, limit);
       while (fields.find() && added.size() < 4) {
         String value = fields.group(1);
-        if (SAFE_CODES.contains(value) && added.add(value)) safe.append("; ").append(value);
+        if (SAFE_CODES.contains(value) && added.add(value)) {
+          safe.append("; ").append(value);
+          DiagnosticHistory.GLOBAL.record("REASON", value, System.currentTimeMillis());
+        }
       }
       LAST_FIREBASE_FAILURE.set(new Failure(safe.toString(), System.nanoTime()));
     } catch (RuntimeException ignored) {
@@ -127,11 +132,17 @@ public final class PushDiagnostics {
         else if (current instanceof javax.net.ssl.SSLException) category = "TLS connection failed (SSLException)";
         current = current.getCause();
       }
+      String code = category.startsWith("DNS") ? "DNS" : category.startsWith("connection timed") ? "TIMEOUT" :
+        category.startsWith("connection failed") ? "CONNECT" : category.startsWith("TLS handshake") ? "TLS_HANDSHAKE" :
+        category.startsWith("TLS connection") ? "TLS" : "IO";
+      DiagnosticHistory.GLOBAL.record("TRANSPORT", code, System.currentTimeMillis());
       LAST_FIREBASE_FAILURE.set(new Failure(category, System.nanoTime()));
     } catch (RuntimeException ignored) {
       // Do not propagate failures from diagnostic collection.
     }
   }
+
+  static boolean safeReason(String value) { return SAFE_CODES.contains(value); }
 
   private static boolean isFirebaseSummary(String value) {
     return value.equals("Firebase Installations Service is unavailable. Please try again later.") ||

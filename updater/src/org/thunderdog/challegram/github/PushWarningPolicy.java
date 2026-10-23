@@ -34,6 +34,7 @@ public final class PushWarningPolicy {
   public static synchronized void observeTokenState(int state, String summary) {
     try { observeAt(state, summary, System.currentTimeMillis()); }
     catch (RuntimeException ignored) { transientFailure = false; firstFailureAt = 0; }
+    try { DiagnosticHistory.tokenState(state); } catch (RuntimeException ignored) { }
   }
 
   private static void observeAt(int state, String summary, long now) {

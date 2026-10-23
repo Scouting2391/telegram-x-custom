@@ -171,6 +171,10 @@ def main():
         subprocess.run([str(javac), '--release', '8', '-Xlint:-options', '-cp', str(prod),
                         '-d', str(classes), str(ROOT / 'tests/PushDiagnosticsTest.java')], check=True)
         subprocess.run([str(java), '-cp', os.pathsep.join([str(classes), str(prod)]), 'PushDiagnosticsTest'], check=True)
+        subprocess.run([str(javac), '--release', '8', '-Xlint:-options', '-cp', cp,
+                        '-d', str(classes), str(ROOT / 'tests/DiagnosticCaptureTest.java')], check=True)
+        subprocess.run([str(java), '-cp', os.pathsep.join([str(classes), cp]),
+                        'org.thunderdog.challegram.github.DiagnosticCaptureTest'], check=True)
 
 
 if __name__ == '__main__':

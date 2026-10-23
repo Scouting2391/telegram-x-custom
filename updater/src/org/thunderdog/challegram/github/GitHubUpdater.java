@@ -143,11 +143,15 @@ public final class GitHubUpdater {
     catch (PackageManager.NameNotFoundException ignored) { }
     note.setText("Updates come only from this GitHub channel. Android will ask you to confirm installation." + installedBuild);
     layout.addView(note);
+    android.widget.Button diagnostics = new android.widget.Button(activity);
+    diagnostics.setText("Push diagnostics");
+    layout.addView(diagnostics);
     final WeakReference<Activity> ref = new WeakReference<>(activity);
     final AlertDialog dialog = new AlertDialog.Builder(activity)
       .setTitle("GitHub updates").setView(layout)
       .setPositiveButton("Save", null).setNeutralButton("Check now", null)
       .setNegativeButton("Cancel", null).create();
+    diagnostics.setOnClickListener(view -> { dialog.dismiss(); DiagnosticsHub.showSettings(activity); });
     dialog.setOnShowListener(ignored -> {
       dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(view -> {
         Activity live = live(ref);
@@ -702,6 +706,7 @@ public final class GitHubUpdater {
     SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
     initializeDefaults(prefs);
     PushWarningPolicy.initialize(context);
+    DiagnosticsHub.initialize(context);
     return prefs;
   }
 
