@@ -41,6 +41,17 @@ class ReleasePolicyTest(unittest.TestCase):
             with self.subTest(value=value), self.assertRaises(ValueError): rp.checked_revision(value)
         self.assertEqual(rp.checked_revision('99'), 99)
 
+    def test_revision_override_is_scoped_to_upstream_and_preserves_manual_choice(self):
+        overrides = {'v0.29.1.1817': 5}
+        self.assertEqual(rp.revision_for_release('v0.29.1.1817', '1', 'push', overrides), 5)
+        self.assertEqual(rp.revision_for_release('v0.29.1.1817', '1', 'schedule', overrides), 5)
+        self.assertEqual(rp.revision_for_release('v0.29.1.1818', '1', 'schedule', overrides), 1)
+        self.assertEqual(rp.revision_for_release('v0.29.1.1817', '7', 'workflow_dispatch', overrides), 7)
+        for bad in ([], {'main': 5}, {'v0.29.1.1817': '5'}, {'v0.29.1.1817': True},
+                    {'v0.29.1.1817': 0}, {'v0.29.1.1817': 100}):
+            with self.subTest(overrides=bad), self.assertRaises(ValueError):
+                rp.revision_for_release('v0.29.1.1817', '1', 'push', bad)
+
     def test_monotonic_tags(self):
         self.assertLess(rp.tag_order('v0.29.1.1817-custom.1'), rp.tag_order('v0.29.1.1817-custom.2'))
         self.assertLess(rp.tag_order('v0.29.1.1817-custom.99'), rp.tag_order('v0.29.1.1818-custom.1'))

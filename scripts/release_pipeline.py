@@ -161,11 +161,25 @@ def write_outputs(values):
     print(json.dumps(values, indent=2))
 
 
+def revision_for_release(tag, requested, event, overrides):
+    require(isinstance(overrides, dict) and len(overrides) <= 100, "Invalid revision overrides")
+    for upstream, revision in overrides.items():
+        require(isinstance(upstream, str) and TAG.fullmatch(upstream), "Invalid override upstream tag")
+        require(type(revision) is int, "Override revision must be an integer")
+        checked_revision(revision)
+    require(isinstance(tag, str) and TAG.fullmatch(tag), "Invalid selected upstream tag")
+    if event in ("push", "schedule"):
+        return checked_revision(overrides.get(tag, 1))
+    return checked_revision(requested)
+
+
 def discover(args):
     repository = checked_repo(args.repository)
-    revision = checked_revision(args.revision)
     release = api(f"/repos/{UPSTREAM}/releases/latest")
     version, _, _ = select_universal(release)
+    revisions = Path(__file__).resolve().parent.parent / ".github/custom-revisions.json"
+    overrides = json.loads(revisions.read_text(encoding="utf-8")) if revisions.is_file() else {}
+    revision = revision_for_release(release["tag_name"], args.revision, os.environ.get("GITHUB_EVENT_NAME", ""), overrides)
     tag = f"v{version}-custom.{revision}"
     existing = api(f"/repos/{repository}/releases/tags/{quote(tag, safe='')}", missing_ok=True)
     if existing:
@@ -174,7 +188,7 @@ def discover(args):
     latest = api(f"/repos/{repository}/releases/latest", missing_ok=True)
     newer_exists = latest is not None and tag_order(latest.get("tag_name")) >= tag_order(tag)
     write_outputs({"needs_build": str(not existing and not newer_exists).lower(),
-                   "upstream_id": release["id"], "custom_tag": tag})
+                   "upstream_id": release["id"], "custom_tag": tag, "revision": revision})
 
 
 def prepare(args):
